@@ -1,4 +1,3 @@
-# bot.py
 import asyncio
 import json
 import os
@@ -489,10 +488,8 @@ async def roll_pack_cards(db, pack_type: str) -> List[aiosqlite.Row]:
         rarity = choose_rarity(pack["drops"])
         ids = await get_card_ids_by_rarity(db, rarity, include_halloween=include_halloween)
         if not ids:
-            # fallback to any rarity
             ids = await get_card_ids_by_rarity(db, "Common", include_halloween=True)
         card_id = random.choice(ids)
-        # load card row
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM cards WHERE card_id = ?", (card_id,)) as c:
             row = await c.fetchone()
@@ -1545,3 +1542,4 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(TOKEN)
+
