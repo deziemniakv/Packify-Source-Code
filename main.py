@@ -13,25 +13,21 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
-# =========================
-# Config
-# =========================
-
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-INTENTS = discord.Intents.default()  # slash commands don't require message content
-BOT_PREFIX = "!"  # Not used for slash, but keeps the bot consistent
+INTENTS = discord.Intents.default()  
+BOT_PREFIX = "!"  
 
 DB_PATH = "collection.db"
-TEST_GUILD_ID = None  # optionally set your test guild ID for faster slash sync
+TEST_GUILD_ID = None  
 COLOR_DEFAULT = 0x2F3136
 
 STARTING_COINS = 1000
 STARTING_PACK = "basic"
 INVENTORY_BASE_CAPACITY = 200
 
-# Economy/values
+
 RARITY_META = {
     "Common": {
         "emoji": "⬜",
@@ -65,7 +61,7 @@ RARITY_META = {
     },
 }
 
-# Packs definition with drop tables
+
 PACK_DEFS = {
     "basic": {
         "name": "Basic Pack",
@@ -88,7 +84,7 @@ PACK_DEFS = {
         "max_cards": 7,
         "drops": {"Common": 20, "Uncommon": 25, "Rare": 30, "Epic": 20, "Legendary": 5},
     },
-    # Event pack (available during October)
+
     "halloween": {
         "name": "Halloween Pack 🎃",
         "price": 500,
@@ -99,9 +95,9 @@ PACK_DEFS = {
     },
 }
 
-# Collections and cards (seeded on first run)
+
 CARD_POOL = [
-    # Classic Monsters
+
     ("Vampire Count", "Rare", "Classic Monsters", 240),
     ("Swamp Creature", "Uncommon", "Classic Monsters", 120),
     ("Haunted Ghost", "Common", "Classic Monsters", 60),
@@ -113,7 +109,7 @@ CARD_POOL = [
     ("Wicked Witch", "Rare", "Classic Monsters", 260),
     ("Gravekeeper", "Common", "Classic Monsters", 65),
 
-    # Space Explorers
+
     ("Rookie Astronaut", "Common", "Space Explorers", 55),
     ("Veteran Pilot", "Uncommon", "Space Explorers", 130),
     ("Mission Commander", "Rare", "Space Explorers", 270),
@@ -125,7 +121,7 @@ CARD_POOL = [
     ("Probe Operator", "Common", "Space Explorers", 60),
     ("Exobiologist", "Rare", "Space Explorers", 300),
 
-    # Ancient Artifacts
+
     ("Sun Tablet", "Common", "Ancient Artifacts", 70),
     ("Moon Chalice", "Uncommon", "Ancient Artifacts", 140),
     ("Dragon Relic", "Epic", "Ancient Artifacts", 600),
@@ -137,7 +133,7 @@ CARD_POOL = [
     ("Ancient Map", "Common", "Ancient Artifacts", 80),
     ("Golem Core", "Epic", "Ancient Artifacts", 650),
 
-    # Halloween special (event)
+
     ("Pumpkin Baron", "Rare", "Halloween", 350),
     ("Shadow Banshee", "Epic", "Halloween", 700),
     ("Candy Goober", "Common", "Halloween", 75),
@@ -145,9 +141,6 @@ CARD_POOL = [
     ("Nightmare King", "Legendary", "Halloween", 1200),
 ]
 
-# =========================
-# Helpers
-# =========================
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -180,10 +173,6 @@ def calc_sell_price(base_value: int, rarity: str) -> int:
 
 def clamp(n, lo, hi):
     return max(lo, min(n, hi))
-
-# =========================
-# Database setup
-# =========================
 
 CREATE_TABLES_SQL = [
     """
@@ -265,7 +254,7 @@ async def setup_db():
             await db.execute(sql)
         await db.commit()
 
-        # Seed cards
+
         for name, rarity, collection, base_value in CARD_POOL:
             try:
                 await db.execute(
@@ -274,7 +263,7 @@ async def setup_db():
                 )
             except Exception:
                 pass
-        # Seed packs
+
         for ptype, meta in PACK_DEFS.items():
             drops_json = json.dumps(meta["drops"])
             await db.execute(
@@ -292,10 +281,6 @@ async def setup_db():
             )
         await db.commit()
 
-# =========================
-# Repo-like funcs
-# =========================
-
 async def get_user(db, user_id: int) -> Optional[aiosqlite.Row]:
     db.row_factory = aiosqlite.Row
     async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as c:
@@ -306,7 +291,6 @@ async def create_user(db, user_id: int) -> None:
         "INSERT OR IGNORE INTO users (user_id, wallet, shop_level, shelves, inventory_capacity, lifetime_profit, created_at) VALUES (?, ?, 1, 0, ?, 0, ?)",
         (user_id, STARTING_COINS, INVENTORY_BASE_CAPACITY, now_iso()),
     )
-    # Give starting pack
     await db.execute(
         "INSERT INTO owned_packs (user_id, pack_type, created_at) VALUES (?, ?, ?)",
         (user_id, STARTING_PACK, now_iso()),
@@ -448,7 +432,6 @@ async def count_rare_or_better(db, user_id: int) -> int:
         return row[0] if row else 0
 
 async def compute_shop_value(db, user_id: int) -> int:
-    # wallet + inventory sum + upgrades valuation
     wallet = await get_wallet(db, user_id)
     db.row_factory = aiosqlite.Row
     q = """
@@ -489,12 +472,7 @@ async def change_store_stock(db, user_id: int, pack_type: str, delta_qty: int):
         (user_id, pack_type, new_q),
     )
 
-# =========================
-# Selection / Roll logic
-# =========================
-
 def choose_rarity(drops: Dict[str, int]) -> str:
-    # Normalize and choose
     rarities = list(drops.keys())
     weights = [drops[r] for r in rarities]
     return random.choices(rarities, weights=weights, k=1)[0]
@@ -503,11 +481,10 @@ async def roll_pack_cards(db, pack_type: str) -> List[aiosqlite.Row]:
     pack = await get_pack_def(db, pack_type)
     if not pack:
         return []
-    # Determine card count
     n = random.randint(pack["min_cards"], pack["max_cards"])
 
     results = []
-    include_halloween = is_october()  # event gated
+    include_halloween = is_october()
     for _ in range(n):
         rarity = choose_rarity(pack["drops"])
         ids = await get_card_ids_by_rarity(db, rarity, include_halloween=include_halloween)
@@ -522,23 +499,16 @@ async def roll_pack_cards(db, pack_type: str) -> List[aiosqlite.Row]:
             results.append(row)
     return results
 
-# =========================
-# Bot & Views
-# =========================
-
 class TycoonBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=BOT_PREFIX, intents=INTENTS)
         self.db: Optional[aiosqlite.Connection] = None
 
     async def setup_hook(self) -> None:
-        # DB setup
         await setup_db()
         self.db = await aiosqlite.connect(DB_PATH)
-        # For convenience when fetching dict-like rows
         self.db.row_factory = aiosqlite.Row
 
-        # Sync slash
         if TEST_GUILD_ID:
             guild = discord.Object(id=TEST_GUILD_ID)
             self.tree.copy_global_to(guild=guild)
@@ -552,8 +522,6 @@ class TycoonBot(commands.Bot):
         await super().close()
 
 bot = TycoonBot()
-
-# ---------- Inventory Pagination View ----------
 
 class InventoryView(discord.ui.View):
     def __init__(self, user_id: int, items: List[aiosqlite.Row], page_size: int = 10, timeout: float = 120):
@@ -602,8 +570,6 @@ class InventoryView(discord.ui.View):
             self.page += 1
         await interaction.response.edit_message(embed=self.format_page(), view=self)
 
-# ---------- Trade View ----------
-
 class TradeState:
     def __init__(self, a_id: int, b_id: int):
         self.a_id = a_id
@@ -643,8 +609,7 @@ class TradeView(discord.ui.View):
                 await self._apply_offers(modal_interaction, offers, who)
 
         modal = OfferModal()
-        # attach bound method
-        modal._apply_offers = self._apply_offers  # type: ignore
+        modal._apply_offers = self._apply_offers 
         await interaction.response.send_modal(modal)
 
     async def _apply_offers(self, interaction: discord.Interaction, offers: List[str], who: str):
@@ -653,7 +618,6 @@ class TradeView(discord.ui.View):
             await interaction.followup.send("This button isn't for you.", ephemeral=True)
             return
 
-        # Validate inventory exists and not locked
         valid_ids = []
         async with self.bot.db.execute("SELECT inventory_id, locked FROM inventory WHERE user_id = ? AND inventory_id IN (%s)" %
                                        ",".join("?"*len(offers)), (uid, *offers)) as c:
@@ -667,7 +631,6 @@ class TradeView(discord.ui.View):
             await interaction.followup.send("No valid/unlocked items found for those IDs.", ephemeral=True)
             return
 
-        # Lock items
         await self.bot.db.execute(
             "UPDATE inventory SET locked = 1 WHERE user_id = ? AND inventory_id IN (%s)" % ",".join("?"*len(valid_ids)),
             (uid, *valid_ids)
@@ -687,7 +650,6 @@ class TradeView(discord.ui.View):
             await self.msg.edit(embed=self._summary(), view=self)
 
     async def _unlock_all(self):
-        # Unlock offered items
         ids = self.state.a_offers + self.state.b_offers
         if not ids:
             return
@@ -698,7 +660,6 @@ class TradeView(discord.ui.View):
         await self.bot.db.commit()
 
     async def _finalize_trade(self, interaction: discord.Interaction):
-        # Transfer items
         ids_a = self.state.a_offers
         ids_b = self.state.b_offers
         if ids_a:
@@ -767,8 +728,6 @@ class TradeView(discord.ui.View):
         except Exception:
             pass
 
-# ---------- Market View (List / Buy / Remove via Modals) ----------
-
 class MarketView(discord.ui.View):
     def __init__(self, bot: TycoonBot, viewer_id: int, timeout: float = 180):
         super().__init__(timeout=timeout)
@@ -816,7 +775,6 @@ class MarketView(discord.ui.View):
             price = discord.ui.TextInput(label="Price", placeholder="e.g., 300", required=True)
             async def on_submit(self, mi: discord.Interaction):
                 await mi.response.defer()
-                # Validate ownership and lock item
                 inv = await get_inventory_item(self_view.bot.db, mi.user.id, str(self.inv_id.value).strip())
                 if not inv:
                     await mi.followup.send("You don't own that card, or it doesn't exist.", ephemeral=True)
@@ -830,7 +788,6 @@ class MarketView(discord.ui.View):
                 except:
                     await mi.followup.send("Invalid price.", ephemeral=True)
                     return
-                # Lock item and create listing
                 await self_view.bot.db.execute("UPDATE inventory SET locked = 1 WHERE inventory_id = ?", (inv["inventory_id"],))
                 await self_view.bot.db.execute(
                     "INSERT INTO marketplace (seller_id, item_type, inventory_id, price, created_at) VALUES (?, 'card', ?, ?, ?)",
@@ -862,13 +819,11 @@ class MarketView(discord.ui.View):
                 except:
                     await mi.followup.send("Invalid quantity/price.", ephemeral=True)
                     return
-                # We list from store stock (shop inventory), not owned_packs
                 stock = await get_store_stock(self_view.bot.db, mi.user.id)
                 available = stock.get(ptype_s, 0)
                 if available < q:
                     await mi.followup.send(f"Not enough in store stock. You have {available} of {ptype_s}.", ephemeral=True)
                     return
-                # Reduce stock and create listing
                 await change_store_stock(self_view.bot.db, mi.user.id, ptype_s, -q)
                 await self_view.bot.db.execute(
                     "INSERT INTO marketplace (seller_id, item_type, pack_type, quantity, price, created_at) VALUES (?, 'pack', ?, ?, ?, ?)",
@@ -898,7 +853,6 @@ class MarketView(discord.ui.View):
                     qty_req = max(1, int(str(self.quantity.value)))
                 except:
                     qty_req = 1
-                # Load listing
                 self_view.bot.db.row_factory = aiosqlite.Row
                 async with self_view.bot.db.execute("SELECT * FROM marketplace WHERE listing_id = ? AND status = 'active'", (lid,)) as c:
                     listing = await c.fetchone()
@@ -914,7 +868,6 @@ class MarketView(discord.ui.View):
                     if wallet < price:
                         await mi.followup.send("Not enough coins.", ephemeral=True)
                         return
-                    # Transfer: deduct coins, unlock/move card, pay seller, mark listing sold
                     await adjust_wallet(self_view.bot.db, mi.user.id, -price)
                     await adjust_wallet(self_view.bot.db, listing["seller_id"], price)
                     await self_view.bot.db.execute(
@@ -925,7 +878,6 @@ class MarketView(discord.ui.View):
                     await self_view.bot.db.commit()
                     await mi.followup.send("Purchased card successfully.", ephemeral=True)
                 else:
-                    # pack
                     q_avail = listing["quantity"]
                     q_buy = clamp(qty_req, 1, q_avail)
                     price_total = q_buy * listing["price"]
@@ -935,10 +887,8 @@ class MarketView(discord.ui.View):
                         return
                     await adjust_wallet(self_view.bot.db, mi.user.id, -price_total)
                     await adjust_wallet(self_view.bot.db, listing["seller_id"], price_total)
-                    # Give owned packs to buyer
                     for _ in range(q_buy):
                         await give_owned_pack(self_view.bot.db, mi.user.id, listing["pack_type"])
-                    # Reduce listing quantity or mark sold
                     if q_buy == q_avail:
                         await self_view.bot.db.execute("UPDATE marketplace SET status = 'sold' WHERE listing_id = ?", (lid,))
                     else:
@@ -990,10 +940,6 @@ class MarketView(discord.ui.View):
         except Exception:
             pass
 
-# =========================
-# Autocomplete
-# =========================
-
 @bot.tree.command(description="Create your account and shop")
 async def start(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True, thinking=True)
@@ -1005,8 +951,6 @@ async def start(interaction: discord.Interaction):
     await create_user(bot.db, interaction.user.id)
     await bot.db.commit()
     await interaction.followup.send(f"Account created! You received {STARTING_COINS} coins and a {STARTING_PACK} pack. Use /openpack to open it!", ephemeral=True)
-
-# --- Profile ---
 
 @bot.tree.command(description="Show your shop profile")
 async def profile(interaction: discord.Interaction):
@@ -1034,8 +978,6 @@ async def profile(interaction: discord.Interaction):
     embed.set_footer(text=f"Created {readable_ts(user['created_at'])} • Last daily {readable_ts(user['last_daily'])}")
     await interaction.followup.send(embed=embed)
 
-# --- Inventory ---
-
 @bot.tree.command(description="Show all cards you own")
 async def inventory(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -1043,14 +985,11 @@ async def inventory(interaction: discord.Interaction):
     if not user:
         await interaction.followup.send("Use /start first.", ephemeral=True)
         return
-    # Load up to 200 items for pagination
     items = await inventory_items(bot.db, interaction.user.id, limit=400, offset=0)
     view = InventoryView(interaction.user.id, items)
     embed = view.format_page()
     msg = await interaction.followup.send(embed=embed, view=view)
     view.message = msg
-
-# --- Pack opening ---
 
 @bot.tree.command(name="openpack", description="Open one of your packs")
 async def openpack_cmd(interaction: discord.Interaction):
@@ -1059,37 +998,30 @@ async def openpack_cmd(interaction: discord.Interaction):
     if not user:
         await interaction.followup.send("Use /start first.", ephemeral=True)
         return
-    # check pack
     pack_type = await pop_oldest_owned_pack(bot.db, interaction.user.id)
     if not pack_type:
         await interaction.followup.send("You have no packs to open. Use /buy pack <type>.", ephemeral=True)
         return
 
     pack_def = await get_pack_def(bot.db, pack_type)
-    # capacity check
     inv_count = await inventory_count(bot.db, interaction.user.id)
     to_open_preview = pack_def["max_cards"]
     if inv_count + pack_def["min_cards"] > user["inventory_capacity"]:
         await interaction.followup.send(f"Not enough inventory space. You need at least {pack_def['min_cards']} empty slots. Use /shop upgrade.", ephemeral=True)
-        # return the pack back (since we popped it)
         await give_owned_pack(bot.db, interaction.user.id, pack_type)
         await bot.db.commit()
         return
 
-    # Animation message
     embed = discord.Embed(title=f"🎁 Opening {pack_def['name']}...", color=0xE67E22)
     embed.description = "Rolling cards..."
     msg = await interaction.followup.send(embed=embed)
 
-    # Roll results
     cards = await roll_pack_cards(bot.db, pack_type)
-    # Add to inventory
     obtained = []
     for idx, c in enumerate(cards, start=1):
         inv_id = await add_card_to_inventory(bot.db, interaction.user.id, c["card_id"])
         obtained.append((c, inv_id))
 
-        # Animate reveal
         reveal = f"{rarity_emoji(c['rarity'])} {c['name']} [{c['rarity']}] • {c['collection']} (ID: `{inv_id}`)"
         embed.description = (embed.description or "") + f"\n{reveal}"
         embed.color = rarity_color(c["rarity"])
@@ -1098,7 +1030,6 @@ async def openpack_cmd(interaction: discord.Interaction):
 
     await bot.db.commit()
 
-    # Summary
     summary = discord.Embed(
         title="✨ Pack Results",
         description="\n".join(
@@ -1109,7 +1040,6 @@ async def openpack_cmd(interaction: discord.Interaction):
     )
     await msg.edit(embed=summary)
 
-# --- Buy group ---
 
 class BuyGroup(app_commands.Group):
     def __init__(self):
@@ -1150,7 +1080,6 @@ class BuyGroup(app_commands.Group):
             await interaction.followup.send("Use /start first.", ephemeral=True)
             return
         amount = max(1, int(amount or 1))
-        # cost escalates with current shelves
         total_cost = 0
         shelves = user["shelves"]
         for i in range(amount):
@@ -1160,7 +1089,6 @@ class BuyGroup(app_commands.Group):
         if wallet < total_cost:
             await interaction.followup.send(f"Not enough coins. Need {total_cost}.", ephemeral=True)
             return
-        # apply: increase shelves, increase capacity a bit
         await adjust_wallet(bot.db, interaction.user.id, -total_cost)
         await bot.db.execute("UPDATE users SET shelves = shelves + ?, inventory_capacity = inventory_capacity + ? WHERE user_id = ?",
                              (amount, amount * 20, interaction.user.id))
@@ -1181,7 +1109,6 @@ class BuyGroup(app_commands.Group):
             await interaction.followup.send("Unknown pack type.", ephemeral=True)
             return
         quantity = max(1, int(quantity))
-        # store stock purchases are at pack price (could discount if you prefer)
         cost = pack["price"] * quantity
         wallet = await get_wallet(bot.db, interaction.user.id)
         if wallet < cost:
@@ -1194,10 +1121,7 @@ class BuyGroup(app_commands.Group):
 
 bot.tree.add_command(BuyGroup())
 
-# --- Sell card ---
-
 async def sell_card_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-    # Suggest up to 20 of user's inventory matching by name or ID prefix
     bot.db.row_factory = aiosqlite.Row
     query = f"%{current}%"
     q = """
@@ -1238,8 +1162,6 @@ async def sell(interaction: discord.Interaction, card: str):
     await bot.db.commit()
     await interaction.followup.send(f"Sold {inv['name']} [{inv['rarity']}] for {value} coins.")
 
-# --- Shop upgrade ---
-
 class ShopGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="shop", description="Shop management")
@@ -1252,12 +1174,11 @@ class ShopGroup(app_commands.Group):
             await interaction.followup.send("Use /start first.", ephemeral=True)
             return
         level = user["shop_level"]
-        cost = 800 * level  # simple scaling
+        cost = 800 * level
         wallet = await get_wallet(bot.db, interaction.user.id)
         if wallet < cost:
             await interaction.followup.send(f"Not enough coins. Upgrade to level {level+1} costs {cost}.", ephemeral=True)
             return
-        # bonus capacity growth
         cap_increase = 50 + 10 * level
         await adjust_wallet(bot.db, interaction.user.id, -cost)
         await bot.db.execute("UPDATE users SET shop_level = shop_level + 1, inventory_capacity = inventory_capacity + ? WHERE user_id = ?",
@@ -1267,12 +1188,10 @@ class ShopGroup(app_commands.Group):
 
 bot.tree.add_command(ShopGroup())
 
-# --- Leaderboard ---
 
 @bot.tree.command(description="Show top shops by value")
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
-    # Get all user IDs
     bot.db.row_factory = aiosqlite.Row
     async with bot.db.execute("SELECT user_id FROM users") as c:
         rows = await c.fetchall()
@@ -1291,8 +1210,6 @@ async def leaderboard(interaction: discord.Interaction):
             embed.add_field(name=f"#{idx} • {val}", value=f"<@{uid}>", inline=False)
     await interaction.followup.send(embed=embed)
 
-# --- Daily bonus ---
-
 @bot.tree.command(description="Claim your daily bonus and store sales")
 async def daily(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -1300,8 +1217,6 @@ async def daily(interaction: discord.Interaction):
     if not user:
         await interaction.followup.send("Use /start first.", ephemeral=True)
         return
-
-    # Check last daily
     ok = True
     msg = ""
     if user["last_daily"]:
@@ -1316,19 +1231,14 @@ async def daily(interaction: discord.Interaction):
         await interaction.followup.send(msg, ephemeral=True)
         return
 
-    # Base daily bonus
     base = random.randint(100, 200)
 
-    # Store NPC sales
     shelves = user["shelves"]
     stock = await get_store_stock(bot.db, interaction.user.id)
-    # Each shelf allows up to 5 sales/day
     sales_capacity = shelves * 5
     total_sales_profit = 0
     total_sold = {}
     if sales_capacity > 0 and stock:
-        # Prioritize higher priced packs for revenue
-        # Determine effective sale price with margin
         for ptype, qty in sorted(stock.items(), key=lambda kv: PACK_DEFS[kv[0]]["price"] if kv[0] in PACK_DEFS else 0, reverse=True):
             if sales_capacity <= 0:
                 break
@@ -1338,7 +1248,7 @@ async def daily(interaction: discord.Interaction):
             pack = await get_pack_def(bot.db, ptype)
             if not pack:
                 continue
-            margin = 0.2  # 20% profit margin
+            margin = 0.2
             profit_per = int(pack["price"] * margin)
             total_sales_profit += profit_per * sell_units
             await change_store_stock(bot.db, interaction.user.id, ptype, -sell_units)
@@ -1354,8 +1264,6 @@ async def daily(interaction: discord.Interaction):
     sold_str = ", ".join(f"{k}x{v}" for k, v in total_sold.items()) if total_sold else "No sales"
     await interaction.followup.send(f"Daily claimed! +{base} bonus. Store sales: {sold_str} → +{total_sales_profit}. Total +{total_gain}.")
 
-# --- Trade ---
-
 @bot.tree.command(description="Trade cards with another player")
 @app_commands.describe(user="The user to trade with")
 async def trade(interaction: discord.Interaction, user: discord.User):
@@ -1363,20 +1271,16 @@ async def trade(interaction: discord.Interaction, user: discord.User):
     if user.bot or user.id == interaction.user.id:
         await interaction.followup.send("Choose a valid trading partner.", ephemeral=True)
         return
-    # Ensure both have accounts
     u1 = await get_user(bot.db, interaction.user.id)
     u2 = await get_user(bot.db, user.id)
     if not u1 or not u2:
         await interaction.followup.send("Both players need to /start first.", ephemeral=True)
         return
-    # Create session
     state = TradeState(interaction.user.id, user.id)
     view = TradeView(bot, state)
     embed = view._summary()
     msg = await interaction.channel.send(content=f"Trade session started: <@{interaction.user.id}> ↔ <@{user.id}>", embed=embed, view=view)
     view.msg = msg
-
-# --- Gift ---
 
 @bot.tree.command(description="Gift a card or pack to someone")
 @app_commands.describe(user="Recipient", item="card:<InvID> or pack:<type>[:qty]")
@@ -1413,15 +1317,12 @@ async def gift(interaction: discord.Interaction, user: discord.User, item: str):
                 qty = max(1, int(parts[1]))
             except:
                 qty = 1
-        # Giver must have owned_packs of that type
-        # We'll consume from owned_packs; if not enough, fallback to store stock
         bot.db.row_factory = aiosqlite.Row
         async with bot.db.execute("SELECT id FROM owned_packs WHERE user_id = ? AND pack_type = ? LIMIT ?", (interaction.user.id, ptype, qty)) as c:
             pack_rows = await c.fetchall()
         if len(pack_rows) < qty:
             await interaction.followup.send("You don't have enough owned packs of that type.", ephemeral=True)
             return
-        # Transfer: delete giver packs and add receiver packs
         ids = [r["id"] for r in pack_rows]
         await bot.db.execute(
             "DELETE FROM owned_packs WHERE id IN (%s)" % ",".join("?"*len(ids)),
@@ -1434,8 +1335,6 @@ async def gift(interaction: discord.Interaction, user: discord.User, item: str):
     else:
         await interaction.followup.send("Invalid item format. Use card:<InvID> or pack:<type>[:qty].", ephemeral=True)
 
-# --- Collection progress ---
-
 @bot.tree.command(description="Show your thematic collection progress")
 async def collection(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -1443,11 +1342,9 @@ async def collection(interaction: discord.Interaction):
     if not user:
         await interaction.followup.send("Use /start first.", ephemeral=True)
         return
-    # Get collections catalogue
     bot.db.row_factory = aiosqlite.Row
     async with bot.db.execute("SELECT DISTINCT collection FROM cards") as c:
         collections = [r[0] for r in await c.fetchall()]
-    # For each collection, how many unique owned
     desc_lines = []
     for coll in collections:
         async with bot.db.execute(
@@ -1464,13 +1361,10 @@ async def collection(interaction: discord.Interaction):
         have = int(have_row[0] or 0)
         total = int(total_row[0] or 0)
         pct = 0 if total == 0 else int(have * 100 / total)
-        # simple progress bar
         bars = "█" * (pct // 10) + "░" * (10 - pct // 10)
         desc_lines.append(f"{coll}: [{bars}] {have}/{total} ({pct}%)")
     embed = discord.Embed(title="🗂️ Collection Progress", description="\n".join(desc_lines) or "No cards yet.", color=0x95A5A6)
     await interaction.followup.send(embed=embed)
-
-# --- Market ---
 
 @bot.tree.command(description="Open the global marketplace")
 async def market(interaction: discord.Interaction):
@@ -1483,8 +1377,6 @@ async def market(interaction: discord.Interaction):
     msg = await interaction.followup.send(embed=embed, view=view)
     view.message = msg
 
-# --- Pack info ---
-
 @bot.tree.command(description="Show pack info (odds, contents)")
 @app_commands.describe(type="Pack type to inspect")
 async def packinfo(interaction: discord.Interaction, type: str):
@@ -1495,7 +1387,6 @@ async def packinfo(interaction: discord.Interaction, type: str):
         return
     odds = pack["drops"]
     odds_str = "\n".join(f"{rarity_emoji(r)} {r}: {pct}%" for r, pct in odds.items())
-    # list a few sample cards of different rarities
     bot.db.row_factory = aiosqlite.Row
     sample_lines = []
     for r in ["Legendary", "Epic", "Rare", "Uncommon", "Common"]:
@@ -1510,8 +1401,6 @@ async def packinfo(interaction: discord.Interaction, type: str):
         color=0xF39C12
     )
     await interaction.followup.send(embed=embed)
-
-# --- Event ---
 
 @bot.tree.command(description="Show current events")
 async def event(interaction: discord.Interaction):
@@ -1530,17 +1419,8 @@ async def event(interaction: discord.Interaction):
         )
     await interaction.followup.send(embed=embed)
 
-# --- Profile helpers: number of packs, rare cards -- already covered in /profile
-
-# --- Leaderboard done
-
-# ========================
-# Help / Support Command
-# ========================
-# Support links
 SUPPORT_SERVER_URL = os.getenv("SUPPORT_SERVER_URL", "https://discord.gg/bwG2jS7Xhn")
 
-# Minimal permissions for the invite link (view/send/embed/read history)
 INVITE_PERMISSIONS = discord.Permissions()
 INVITE_PERMISSIONS.update(
     view_channel=True,
@@ -1568,7 +1448,7 @@ class SupportView(discord.ui.View):
 
     async def on_timeout(self):
         try:
-            await self.message.edit(view=None)  # type: ignore
+            await self.message.edit(view=None)
         except Exception:
             pass
 
@@ -1628,10 +1508,8 @@ async def help_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="support", description="Invite the bot and get the support server link")
 async def support_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
-
-    # Build an OAuth2 invite link with minimal required permissions
     invite_url = discord.utils.oauth_url(
-        bot.user.id,  # type: ignore
+        bot.user.id,
         permissions=INVITE_PERMISSIONS,
         scopes=("bot", "applications.commands")
     )
@@ -1647,11 +1525,7 @@ async def support_cmd(interaction: discord.Interaction):
 
     view = SupportView(invite_url, support_url)
     msg = await interaction.followup.send(embed=embed, view=view, ephemeral=False)
-    view.message = msg  # so the view can remove itself on timeout
-
-# =========================
-# Error handling
-# =========================
+    view.message = msg 
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -1659,10 +1533,6 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
         await interaction.response.send_message(f"Error: {error}", ephemeral=True)
     except:
         await interaction.followup.send(f"Error: {error}", ephemeral=True)
-
-# =========================
-# Run
-# =========================
 
 @bot.event
 async def on_ready():
@@ -1673,4 +1543,5 @@ if __name__ == "__main__":
     if not TOKEN:
         print("Missing DISCORD_TOKEN in .env")
         raise SystemExit(1)
+
     bot.run(TOKEN)
